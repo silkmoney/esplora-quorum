@@ -1,0 +1,11 @@
+esplora-quorum
+Copyright (c) 2026 Andrzej Broński
+
+This crate implements no cryptography and ports no third-party source. It reads
+the Esplora REST API, whose route shapes and JSON field names are those of
+Blockstream's esplora (https://github.com/Blockstream/esplora), and matches the
+rejection wordings emitted by Bitcoin Core's `sendrawtransaction`.
+
+The reconciliation rules, their rationale and their tests were written for
+SilkMoney's atomic-swap watchtower and browser swap driver, and are extracted
+here unchanged in behaviour.

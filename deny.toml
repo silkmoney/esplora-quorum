@@ -1,0 +1,45 @@
+# cargo-deny configuration. Run: `cargo deny --all-features check`.
+
+[licenses]
+# Permissive licences only. Every entry is either OSI-approved permissive or a
+# public-domain equivalent; none are copyleft. The dependency tree is checked
+# with `--all-features`, so this covers the `client` stack — reqwest, hyper,
+# rustls and ring — too.
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-1-Clause",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+confidence-threshold = 0.9
+# Several entries are not in the current tree; they are permitted as a buffer
+# so a routine `cargo update` pulling one in does not break CI.
+unused-allowed-license = "allow"
+
+[bans]
+# Duplicate major versions are allowed — a few appear in the reqwest stack and
+# none are worth pinning over. Flag them without failing.
+multiple-versions = "warn"
+wildcards = "warn"
+
+[advisories]
+yanked = "deny"
+# Scope selector, not a lint level: it chooses WHICH crates unmaintained
+# advisories are reported for, and those reports are errors. "workspace" means
+# the direct dependencies — an unmaintained advisory on one of those should
+# stop a release; one on a transitive crate we cannot swap out should not.
+unmaintained = "workspace"
+
+[sources]
+# Only crates.io.
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -1,0 +1,42 @@
+[package]
+name = "esplora-quorum"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85.0"
+license = "MIT OR Apache-2.0"
+description = "Read Bitcoin chain state from several Esplora providers without trusting any one of them."
+repository = "https://github.com/silkmoney/esplora-quorum"
+readme = "README.md"
+keywords = ["bitcoin", "esplora", "blockchain", "quorum", "no-std"]
+categories = ["cryptography::cryptocurrencies", "no-std"]
+# Ship the library, its tests and its licences — nothing else.
+exclude = ["/.github", "/flake.nix", "/flake.lock", "/rust-toolchain.toml", "/deny.toml"]
+
+[features]
+default = ["std"]
+std = ["serde/std", "serde_json?/std"]
+# A ready-made async client over reqwest. Without it the crate performs no I/O
+# at all: you fetch, it reconciles.
+client = ["std", "dep:reqwest", "dep:serde_json", "dep:futures-util"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+
+# Typed errors across the whole public API. Kept no_std via core::error::Error.
+thiserror = { version = "2.0.20", default-features = false, features = [] }
+
+# The Esplora REST shapes are JSON; deriving them is the whole dependency.
+serde = { version = "1.0.228", default-features = false, features = ["derive", "alloc"] }
+
+# Only for the optional client.
+reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls"], optional = true }
+serde_json = { version = "1.0.145", default-features = false, features = ["alloc"], optional = true }
+futures-util = { version = "0.3.31", default-features = false, features = ["alloc"], optional = true }
+
+[dev-dependencies]
+
+# The client's tests need a runtime.
+tokio = { version = "1.48.0", default-features = false, features = ["rt", "macros"] }
