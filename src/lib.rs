@@ -69,7 +69,9 @@ pub mod types;
 pub mod client;
 
 pub use error::Error;
-pub use types::{Answer, Outspend, TxInfo, TxStatus, confirmations, normalise, route};
+pub use types::{
+  AddressTx, Answer, Outspend, TxInfo, TxStatus, Vout, confirmations, normalise, route,
+};
 
 #[cfg(feature = "client")]
 pub use client::Chain;

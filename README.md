@@ -60,6 +60,7 @@ Each is a pure function in `policy`, testable without a network.
 | `/tx/:txid` | most advanced answer wins; **different confirmed heights is fatal** |
 | `/tx/:txid/hex` | one provider having it beats another's 404; **different bytes is fatal** |
 | `/tx/:txid/outspend/:vout` | **spent beats unspent**; different spenders is fatal |
+| `/address/:addr/txs` | existence **unions**, confirmation needs a **majority**; disagreeing values are fatal |
 | broadcast | fan out to all; any acceptance wins; "already known" counts as accepted |
 
 They are asymmetric on purpose, because the failure modes are.

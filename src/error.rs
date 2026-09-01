@@ -26,6 +26,24 @@ pub enum Error {
     b_height: u64,
   },
 
+  /// Two providers disagree about what a transaction paid an address.
+  ///
+  /// A transaction's outputs are fixed by its txid, so this is not lag and not
+  /// a fork: one of them is wrong about money. Anything downstream that treats
+  /// the amount as settled -- a deposit watcher deciding whether enough
+  /// arrived -- must not proceed on either answer.
+  #[error(
+    "providers disagree on what {txid} paid {address}: {a} says {a_value} sat, {b} says {b_value} sat"
+  )]
+  ValueDisagreement {
+    txid: String,
+    address: String,
+    a: String,
+    a_value: u64,
+    b: String,
+    b_value: u64,
+  },
+
   /// Two providers returned different bytes for the same txid. A transaction's
   /// serialization is determined by its hash, so both cannot be right.
   #[error("providers disagree on the bytes of {txid}: {a} and {b} returned different hex")]

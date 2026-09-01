@@ -11,7 +11,9 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::error::Error;
-use crate::types::{Answer, Outspend, TxInfo};
+use alloc::collections::BTreeMap;
+
+use crate::types::{AddressTx, Answer, Outspend, TxInfo, TxStatus};
 
 /// A tip more than this many blocks above the median is treated as a lying or
 /// broken provider and ignored. Six blocks is far beyond honest propagation
@@ -243,6 +245,126 @@ pub fn reconcile_outspend(
     })
 }
 
+/// Reconcile `/address/:addr/txs` across providers.
+///
+/// # Two rules, because the two mistakes do not cost the same
+///
+/// A watcher built on this tells somebody whether their money arrived. Saying
+/// "confirmed" when it is not is worse than saying "not yet" when it is: the
+/// first ends the user's attention, the second only prolongs it. So existence
+/// and confirmation are reconciled differently.
+///
+/// **Existence is a union.** Any provider reporting a transaction that pays the
+/// address is enough for it to appear here. A provider that has not seen a
+/// mempool transaction yet is behind, not authoritative, and waiting for
+/// agreement would mean the slowest provider setting the pace for every deposit.
+///
+/// **Confirmation is a majority.** A transaction is returned confirmed only if
+/// more than half of the providers that ANSWERED say it is. Otherwise it is
+/// downgraded to seen-but-unconfirmed: the deposit still shows up, it just does
+/// not yet carry the claim that ends the user's attention.
+///
+/// With a single provider a majority is whatever it says -- which is the old
+/// single-provider behaviour, reached honestly. [`quorum_warning`] is what tells
+/// an operator they are in that position.
+///
+/// # What is an error rather than a downgrade
+///
+/// Two confirmed answers naming different block heights, or any two answers
+/// naming different values for the same output. Neither is lag: a transaction's
+/// height and its outputs are fixed once it is mined. One provider is wrong
+/// about money, and the caller must not pick a side.
+pub fn reconcile_address_txs(
+  address: &str,
+  answers: Vec<Answer<Vec<AddressTx>>>,
+) -> Result<Vec<AddressTx>, Error> {
+  // Only providers that actually answered get a vote; an unreachable one must
+  // not count towards the majority it never took part in.
+  let mut answered = 0usize;
+  let mut by_txid: BTreeMap<String, Vec<(String, AddressTx)>> = BTreeMap::new();
+
+  for (base, txs) in answers {
+    let Some(txs) = txs else { continue };
+    answered += 1;
+    for tx in txs {
+      if tx.output_to(address).is_none() {
+        continue;
+      }
+      by_txid
+        .entry(tx.txid.clone())
+        .or_default()
+        .push((base.clone(), tx));
+    }
+  }
+
+  let mut out = Vec::with_capacity(by_txid.len());
+  for (txid, copies) in by_txid {
+    let mut confirmed_votes = 0usize;
+    let mut height: Option<(String, u64)> = None;
+    let mut value: Option<(String, u64)> = None;
+
+    for (base, tx) in &copies {
+      if tx.status.confirmed {
+        confirmed_votes += 1;
+      }
+      if let (Some(h), true) = (tx.status.block_height, tx.status.confirmed) {
+        match &height {
+          Some((prev_base, prev_h)) if *prev_h != h => {
+            return Err(Error::HeightDisagreement {
+              txid: txid.clone(),
+              a: prev_base.clone(),
+              a_height: *prev_h,
+              b: base.clone(),
+              b_height: h,
+            });
+          }
+          None => height = Some((base.clone(), h)),
+          _ => {}
+        }
+      }
+      if let Some((_, out)) = tx.output_to(address) {
+        match &value {
+          Some((prev_base, prev_v)) if *prev_v != out.value => {
+            return Err(Error::ValueDisagreement {
+              txid: txid.clone(),
+              address: address.to_string(),
+              a: prev_base.clone(),
+              a_value: *prev_v,
+              b: base.clone(),
+              b_value: out.value,
+            });
+          }
+          None => value = Some((base.clone(), out.value)),
+          _ => {}
+        }
+      }
+    }
+
+    let majority_confirmed = confirmed_votes * 2 > answered;
+
+    // Prefer a confirmed copy when the majority agrees -- it carries the height
+    // and block time. Otherwise take any copy and strip the claim.
+    let mut chosen = copies
+      .iter()
+      .find(|(_, tx)| tx.status.confirmed == majority_confirmed)
+      .or_else(|| copies.first())
+      .map(|(_, tx)| tx.clone())
+      .expect("a txid exists because at least one copy produced it");
+
+    if !majority_confirmed {
+      chosen.status = TxStatus {
+        confirmed: false,
+        block_height: None,
+        block_hash: None,
+        block_time: None,
+      };
+    }
+    out.push(chosen);
+  }
+
+  Ok(out)
+}
+
 /// Does this rejection mean "we already have it"?
 ///
 /// Matched against the KNOWN wordings, not the bare word "already": a bare
@@ -264,4 +386,151 @@ pub fn is_already_known(msg: &str) -> bool {
   ]
   .iter()
   .any(|known| m.contains(known))
+}
+
+#[cfg(test)]
+mod address_tests {
+  use super::*;
+  use alloc::vec;
+
+  const ADDR: &str = "bc1qexample";
+
+  fn tx(txid: &str, confirmed: bool, height: Option<u64>, value: u64) -> AddressTx {
+    AddressTx {
+      txid: txid.to_string(),
+      status: TxStatus {
+        confirmed,
+        block_height: height,
+        block_hash: None,
+        block_time: height.map(|h| 1_700_000_000 + h),
+      },
+      vout: vec![crate::types::Vout {
+        scriptpubkey_address: Some(ADDR.to_string()),
+        value,
+      }],
+    }
+  }
+
+  fn from(base: &str, txs: Vec<AddressTx>) -> Answer<Vec<AddressTx>> {
+    (base.to_string(), Some(txs))
+  }
+
+  /// Existence unions: one provider seeing a deposit is enough to report it.
+  ///
+  /// The alternative is the slowest provider setting the pace for every
+  /// deposit, and a mempool transaction one provider has not indexed yet is
+  /// evidence of lag, not of absence.
+  #[test]
+  fn a_single_provider_seeing_a_deposit_is_enough_to_report_it() {
+    let got = reconcile_address_txs(
+      ADDR,
+      vec![
+        from("a", vec![tx("aa", false, None, 50_000)]),
+        from("b", vec![]),
+        from("c", vec![]),
+      ],
+    )
+    .unwrap();
+    assert_eq!(got.len(), 1, "the deposit should still be reported");
+    assert!(!got[0].status.confirmed);
+  }
+
+  /// Confirmation needs a majority, because "confirmed" is the claim that ends
+  /// the user's attention.
+  #[test]
+  fn one_provider_alone_cannot_confirm() {
+    let got = reconcile_address_txs(
+      ADDR,
+      vec![
+        from("a", vec![tx("aa", true, Some(800_000), 50_000)]),
+        from("b", vec![tx("aa", false, None, 50_000)]),
+        from("c", vec![tx("aa", false, None, 50_000)]),
+      ],
+    )
+    .unwrap();
+    assert_eq!(got.len(), 1);
+    assert!(
+      !got[0].status.confirmed,
+      "one vote out of three is not a majority"
+    );
+    assert_eq!(
+      got[0].status.block_height, None,
+      "a downgrade drops the height too"
+    );
+  }
+
+  #[test]
+  fn two_of_three_confirms() {
+    let got = reconcile_address_txs(
+      ADDR,
+      vec![
+        from("a", vec![tx("aa", true, Some(800_000), 50_000)]),
+        from("b", vec![tx("aa", true, Some(800_000), 50_000)]),
+        from("c", vec![tx("aa", false, None, 50_000)]),
+      ],
+    )
+    .unwrap();
+    assert!(got[0].status.confirmed);
+    assert_eq!(got[0].status.block_height, Some(800_000));
+  }
+
+  /// A provider that never answered cannot count towards the majority it took
+  /// no part in -- otherwise an outage silently raises the bar for confirming.
+  #[test]
+  fn silence_is_not_a_vote_against() {
+    let got = reconcile_address_txs(
+      ADDR,
+      vec![
+        from("a", vec![tx("aa", true, Some(800_000), 50_000)]),
+        ("b".to_string(), None),
+        ("c".to_string(), None),
+      ],
+    )
+    .unwrap();
+    assert!(
+      got[0].status.confirmed,
+      "one of one answering is a majority"
+    );
+  }
+
+  /// Not lag: a mined transaction's height is fixed, so two confirmed answers
+  /// naming different ones means somebody is wrong.
+  #[test]
+  fn confirmed_answers_at_different_heights_are_an_error() {
+    let err = reconcile_address_txs(
+      ADDR,
+      vec![
+        from("a", vec![tx("aa", true, Some(800_000), 50_000)]),
+        from("b", vec![tx("aa", true, Some(800_001), 50_000)]),
+      ],
+    )
+    .unwrap_err();
+    assert!(matches!(err, Error::HeightDisagreement { .. }));
+  }
+
+  /// The one that costs money directly. Outputs are fixed by the txid, so a
+  /// disagreement about value is a provider lying or corrupt -- and a deposit
+  /// watcher deciding whether ENOUGH arrived must not pick a side.
+  #[test]
+  fn disagreeing_about_what_was_paid_is_an_error() {
+    let err = reconcile_address_txs(
+      ADDR,
+      vec![
+        from("a", vec![tx("aa", true, Some(800_000), 50_000)]),
+        from("b", vec![tx("aa", true, Some(800_000), 90_000)]),
+      ],
+    )
+    .unwrap_err();
+    assert!(matches!(err, Error::ValueDisagreement { .. }));
+  }
+
+  /// Transactions that do not pay the watched address are dropped: Esplora
+  /// returns everything TOUCHING an address, including the spends of it.
+  #[test]
+  fn transactions_that_do_not_pay_the_address_are_ignored() {
+    let mut spend = tx("bb", true, Some(800_000), 50_000);
+    spend.vout[0].scriptpubkey_address = Some("bc1qsomewhereelse".to_string());
+    let got = reconcile_address_txs(ADDR, vec![from("a", vec![spend])]).unwrap();
+    assert!(got.is_empty());
+  }
 }

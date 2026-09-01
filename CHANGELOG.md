@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-01
+
+### Added
+
+- `/address/:addr/txs`, as `Chain::address_txs` and
+  `policy::reconcile_address_txs`. Existence UNIONS and confirmation takes a
+  MAJORITY, because the two mistakes a deposit watcher can make do not cost the
+  same: saying "confirmed" when it is not ends the user's attention, while
+  saying "not yet" only prolongs it.
+- `AddressTx` and `Vout`, deliberately narrow — only the fields a watcher reads.
+- `Error::ValueDisagreement`, for providers that disagree about what a
+  transaction paid. Outputs are fixed by the txid, so this is not lag: one of
+  them is wrong about money, and the caller must not pick a side.
+
+### Note
+
+Minor rather than patch: the new variant makes `Error` match arms
+non-exhaustive for anyone matching it exhaustively.
+
 ## [0.1.0] — 2026-08-13
 
 Initial extraction.

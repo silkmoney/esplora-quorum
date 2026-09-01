@@ -12,7 +12,7 @@ use futures_util::future::join_all;
 
 use crate::error::Error;
 use crate::policy;
-use crate::types::{TxInfo, normalise, route};
+use crate::types::{AddressTx, TxInfo, normalise, route};
 
 /// Multi-provider Esplora client.
 #[derive(Clone)]
@@ -84,6 +84,16 @@ impl Chain {
   }
 
   /// Raw transaction hex, or `None` if NO provider has heard of it.
+  /// Every transaction paying `address`, reconciled across providers.
+  ///
+  /// Existence unions and confirmation takes a majority -- see
+  /// [`policy::reconcile_address_txs`] for why those two differ.
+  pub async fn address_txs(&self, address: &str) -> Result<Vec<AddressTx>, Error> {
+    let path = route::address_txs(address);
+    let (answers, _) = policy::collect(&path, self.json_all(&path).await)?;
+    policy::reconcile_address_txs(address, answers)
+  }
+
   pub async fn tx_hex(&self, txid: &str) -> Result<Option<String>, Error> {
     let path = route::tx_hex(txid);
     let gets = self.bases.iter().map(|base| {
