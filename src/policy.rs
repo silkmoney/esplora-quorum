@@ -34,7 +34,8 @@ pub const MIN_PROVIDERS_FOR_MAJORITY: usize = 3;
 pub fn quorum_warning(providers: usize) -> Option<String> {
   (providers < MIN_PROVIDERS_FOR_MAJORITY).then(|| {
     format!(
-      "only {providers} esplora provider(s) configured; the tip outlier filter needs \
+      "only {providers} esplora provider(s) configured; every majority rule here \
+       -- the tip outlier filter, and confirming a deposit -- needs \
        {MIN_PROVIDERS_FOR_MAJORITY} to out-vote a liar and is a no-op below that"
     )
   })

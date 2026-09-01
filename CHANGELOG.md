@@ -14,6 +14,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   — so `Answer` shipped undocumented and `Vout` shipped with the wrong prose.
   Docs only; no API change.
 
+### Changed
+
+- `quorum_warning`'s text no longer names only the tip outlier filter. Address
+  reconciliation added a second majority rule, and a deposit watcher logging
+  this at startup was being told about a filter it does not use.
+
 ## [0.2.0] — 2026-09-01
 
 ### Added
