@@ -83,7 +83,6 @@ impl Chain {
     policy::reconcile_tx(txid, answers)
   }
 
-  /// Raw transaction hex, or `None` if NO provider has heard of it.
   /// Every transaction paying `address`, reconciled across providers.
   ///
   /// Existence unions and confirmation takes a majority -- see
@@ -94,6 +93,7 @@ impl Chain {
     policy::reconcile_address_txs(address, answers)
   }
 
+  /// Raw transaction hex, or `None` if NO provider has heard of it.
   pub async fn tx_hex(&self, txid: &str) -> Result<Option<String>, Error> {
     let path = route::tx_hex(txid);
     let gets = self.bases.iter().map(|base| {

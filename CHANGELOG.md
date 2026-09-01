@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-09-01
+
+### Fixed
+
+- `Answer`'s doc comment, which 0.2.0 left attached to the newly inserted `Vout`
+  — so `Answer` shipped undocumented and `Vout` shipped with the wrong prose.
+  Docs only; no API change.
+
 ## [0.2.0] — 2026-09-01
 
 ### Added

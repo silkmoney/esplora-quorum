@@ -36,12 +36,6 @@ pub struct Outspend {
   pub status: Option<TxStatus>,
 }
 
-/// One provider's answer to one question.
-///
-/// `None` is an answer — a 404, the chain saying it has never heard of the
-/// thing — and is deliberately distinct from a provider that could not be
-/// reached, which never becomes an `Answer` at all. Conflating the two is how a
-/// lagging provider turns into "the transaction does not exist".
 /// One output of a transaction, as `/address/:addr/txs` reports it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Vout {
@@ -78,6 +72,12 @@ impl AddressTx {
   }
 }
 
+/// One provider's answer to one question.
+///
+/// `None` is an answer — a 404, the chain saying it has never heard of the
+/// thing — and is deliberately distinct from a provider that could not be
+/// reached, which never becomes an `Answer` at all. Conflating the two is how a
+/// lagging provider turns into "the transaction does not exist".
 pub type Answer<T> = (String, Option<T>);
 
 /// Confirmations for a transaction against an agreed tip: 0 while it is in the
